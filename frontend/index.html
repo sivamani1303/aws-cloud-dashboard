@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>AWS Cloud Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="chart.min.js"></script>
   <style>
     :root {
       --bg:      #0f1117;
@@ -116,6 +116,9 @@
     <p class="section-title">IAM Summary</p>
     <div class="panel" id="iam-summary"></div>
 
+    <p class="section-title" style="margin-top:2rem">Recent Activities</p>
+    <div class="panel" id="activities-panel"></div>
+
   </div>
 </main>
 
@@ -131,13 +134,17 @@
 
     try {
       const response = await fetch(API_URL);
-      const data = await response.json();
+      const raw = await response.json();
+
+      // API Gateway wraps the response in a body string — parse it
+      const data = typeof raw.body === "string" ? JSON.parse(raw.body) : raw;
 
       renderStats(data);
       renderCostChart(data.cost);
       renderEC2(data.ec2);
       renderS3(data.s3);
       renderIAM(data.summary);
+      renderActivities(data.activities);
 
       document.getElementById("last-updated").textContent =
         "Updated " + new Date().toLocaleTimeString();
@@ -258,6 +265,103 @@
     `;
   }
 
+  function renderActivities(activities) {
+    if (!activities?.length) {
+      document.getElementById("activities-panel").innerHTML =
+        '<p style="color:#7b82a8;font-size:13px;padding:1rem 0">No recent activities found</p>';
+      return;
+    }
+
+    function getTip(action) {
+      const tips = {
+        "RunInstances":           { msg: "⚠ EC2 instance launched and consuming free tier hours. Stop it when not in use to save credits.", color: "#f59e0b" },
+        "StartInstances":         { msg: "⚠ EC2 instance started. Free tier gives only 750 hours/month.", color: "#f59e0b" },
+        "StopInstances":          { msg: "✓ Good job stopping the instance. No compute charges while stopped.", color: "#22c55e" },
+        "TerminateInstances":     { msg: "✓ Instance terminated. No further charges for this instance.", color: "#22c55e" },
+        "RebootInstances":        { msg: "ℹ Instance rebooted. Billing continues during reboot.", color: "#3b82f6" },
+        "ModifyInstanceAttribute":{ msg: "ℹ Instance modified. Restart may be required.", color: "#3b82f6" },
+        "CreateBucket":           { msg: "ℹ S3 bucket created. Free tier gives 5GB storage — monitor usage.", color: "#3b82f6" },
+        "DeleteBucket":           { msg: "✓ Bucket deleted. Storage charges stopped.", color: "#22c55e" },
+        "PutBucketPolicy":        { msg: "⚠ Bucket policy changed. Make sure public access is intentional.", color: "#f59e0b" },
+        "PutBucketWebsite":       { msg: "ℹ Static website hosting enabled on bucket.", color: "#3b82f6" },
+        "PutPublicAccessBlock":   { msg: "⚠ Public access settings changed. Review bucket visibility.", color: "#f59e0b" },
+        "CreateUser":             { msg: "ℹ New IAM user created. Follow least privilege.", color: "#3b82f6" },
+        "DeleteUser":             { msg: "✓ IAM user deleted.", color: "#22c55e" },
+        "AttachUserPolicy":       { msg: "⚠ Policy attached to user. Review permissions regularly.", color: "#f59e0b" },
+        "DetachUserPolicy":       { msg: "✓ Policy removed from user.", color: "#22c55e" },
+        "AttachRolePolicy":       { msg: "⚠ Policy attached to role. Ensure least privilege is followed.", color: "#f59e0b" },
+        "CreateRole":             { msg: "ℹ IAM role created. Roles are safer than access keys.", color: "#3b82f6" },
+        "DeleteRole":             { msg: "✓ IAM role deleted.", color: "#22c55e" },
+        "CreateAccessKey":        { msg: "⚠ Access key created. Never share or commit it to GitHub.", color: "#ef4444" },
+        "DeleteAccessKey":        { msg: "✓ Access key deleted. Good security practice.", color: "#22c55e" },
+        "EnableMFADevice":        { msg: "✓ MFA enabled. Your account is now more secure.", color: "#22c55e" },
+        "CreateFunction20150331": { msg: "ℹ Lambda function created. Free tier gives 1M requests/month.", color: "#3b82f6" },
+        "DeleteFunction":         { msg: "✓ Lambda function deleted. No further charges.", color: "#22c55e" },
+        "UpdateFunctionCode20150331v2": { msg: "ℹ Lambda code updated and deployed.", color: "#3b82f6" },
+        "CreateRestApi":          { msg: "ℹ API Gateway created. Free tier gives 1M calls/month.", color: "#3b82f6" },
+        "CreateDeployment":       { msg: "ℹ API deployed to stage. Your endpoint is now live.", color: "#3b82f6" },
+        "PutMetricAlarm":         { msg: "✓ Billing alarm set. You will be notified if costs exceed threshold.", color: "#22c55e" },
+        "DeleteAlarms":           { msg: "⚠ Alarm deleted. You may no longer get billing notifications.", color: "#f59e0b" },
+        "CreateTopic":            { msg: "ℹ SNS topic created. First 1000 emails/month are free.", color: "#3b82f6" },
+        "Subscribe":              { msg: "ℹ Subscription created. Confirm it in your email inbox.", color: "#3b82f6" },
+        "CreateTrail":            { msg: "✓ CloudTrail enabled. All AWS actions are now being logged.", color: "#22c55e" },
+        "DeleteTrail":            { msg: "⚠ CloudTrail deleted. AWS actions are no longer being tracked.", color: "#ef4444" },
+        "CreateDBInstance":       { msg: "⚠ RDS instance running. Free tier gives 750 hours/month. Stop when not in use.", color: "#f59e0b" },
+        "StopDBInstance":         { msg: "✓ RDS stopped. No compute charges while stopped.", color: "#22c55e" },
+        "DeleteDBInstance":       { msg: "✓ RDS deleted. No further charges.", color: "#22c55e" },
+      };
+      return tips[action] || null;
+    }
+
+    const rows = activities.map(a => {
+      const time      = new Date(a.time);
+      const formatted = time.toLocaleDateString() + " " +
+                        time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const isCreate = a.action.startsWith("Create") || a.action.startsWith("Run") || a.action.startsWith("Start") || a.action.startsWith("Enable");
+      const isDelete = a.action.startsWith("Delete") || a.action.startsWith("Terminate") || a.action.startsWith("Stop");
+      const color    = isCreate ? "#22c55e" : isDelete ? "#ef4444" : "#3b82f6";
+
+      const tip = getTip(a.action);
+      const tipHTML = tip ? `
+        <tr>
+          <td colspan="4" style="padding:4px 0 10px 0">
+            <div style="
+              border-left: 3px solid ${tip.color};
+              background: rgba(0,0,0,0.2);
+              border-radius: 4px;
+              padding: 8px 12px;
+              font-size: 12px;
+              color: ${tip.color};
+            ">${tip.msg}</div>
+          </td>
+        </tr>` : "";
+
+      return `
+        <tr>
+          <td style="color:#7b82a8;font-size:11px;white-space:nowrap">${formatted}</td>
+          <td style="color:#7b82a8;font-size:12px">${a.user}</td>
+          <td><span style="color:${color};font-weight:500;font-size:13px">${a.action}</span></td>
+          <td style="font-size:12px;color:#e8eaf2;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.resource}</td>
+        </tr>
+        ${tipHTML}
+      `;
+    }).join("");
+
+    document.getElementById("activities-panel").innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Resource</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
   loadData();
 </script>
 </body>
