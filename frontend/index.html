@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AWS Cloud Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2e3250;
+      --text:    #e8eaf2;
+      --muted:   #7b82a8;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --blue:    #3b82f6;
+      --yellow:  #f59e0b;
+      --purple:  #8b5cf6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { font-weight: 600; font-size: 16px; }
+    main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px; margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem;
+    }
+    .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+    .stat-value { font-size: 28px; font-weight: 700; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 2rem; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem;
+    }
+    .panel-title { font-weight: 600; margin-bottom: 1rem; }
+    .chart-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem;
+    }
+    .section-title {
+      font-size: 13px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left; color: var(--muted); font-size: 11px;
+      text-transform: uppercase; padding: 6px 0 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 9px 0; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+    .badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+    .badge-red   { background: rgba(239,68,68,.15);  color: var(--red); }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border); border-top-color: var(--blue);
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin: 4rem auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .refresh-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    .refresh-btn:hover { background: var(--border); }
+    #last-updated { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">☁ AWS Cloud Dashboard</div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span id="last-updated"></span>
+    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</nav>
+
+<main>
+  <div id="loading"><div class="spinner"></div></div>
+
+  <div id="dashboard" style="display:none">
+
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <p class="section-title">Monthly Cost — Last 6 Months</p>
+    <div class="chart-panel">
+      <canvas id="cost-chart" height="80"></canvas>
+    </div>
+
+    <p class="section-title">Resources</p>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">EC2 Instances</div>
+        <div id="ec2-table"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">S3 Buckets</div>
+        <div id="s3-list"></div>
+      </div>
+    </div>
+
+    <p class="section-title">IAM Summary</p>
+    <div class="panel" id="iam-summary"></div>
+
+  </div>
+</main>
+
+<script>
+  // ⚠ REPLACE THIS WITH YOUR API GATEWAY URL FROM STEP 17
+  const API_URL = "https://beeix39iuh.execute-api.ap-south-1.amazonaws.com/prod/data";
+
+  let costChart = null;
+
+  async function loadData() {
+    document.getElementById("loading").style.display = "block";
+    document.getElementById("dashboard").style.display = "none";
+
+    try {
+      const response = await fetch(API_URL);
+      const data = await response.json();
+
+      renderStats(data);
+      renderCostChart(data.cost);
+      renderEC2(data.ec2);
+      renderS3(data.s3);
+      renderIAM(data.summary);
+
+      document.getElementById("last-updated").textContent =
+        "Updated " + new Date().toLocaleTimeString();
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("dashboard").style.display = "block";
+
+    } catch (error) {
+      document.getElementById("loading").innerHTML =
+        '<p style="color:#ef4444;text-align:center;padding:2rem">Error: ' + error.message + '</p>';
+    }
+  }
+
+  function renderStats(data) {
+    const cards = [
+      { label: "This Month",   value: "$" + (data.cost?.current_month ?? 0).toFixed(2), sub: "AWS cost (USD)", color: "#3b82f6" },
+      { label: "Running EC2",  value: data.ec2?.running ?? 0, sub: "of " + (data.ec2?.total ?? 0) + " total", color: "#22c55e" },
+      { label: "Stopped EC2",  value: data.ec2?.stopped ?? 0, sub: "not billing compute", color: "#f59e0b" },
+      { label: "S3 Buckets",   value: data.s3?.total ?? 0, sub: "storage buckets", color: "#8b5cf6" },
+      { label: "IAM Users",    value: data.summary?.users ?? 0,
+        sub: data.summary?.mfa_enabled ? "✓ MFA on" : "⚠ MFA off",
+        color: data.summary?.mfa_enabled ? "#22c55e" : "#ef4444" }
+    ];
+    document.getElementById("stats-grid").innerHTML = cards.map(c => `
+      <div class="stat-card">
+        <div class="stat-label">${c.label}</div>
+        <div class="stat-value" style="color:${c.color}">${c.value}</div>
+        <div class="stat-sub">${c.sub}</div>
+      </div>
+    `).join("");
+  }
+
+  function renderCostChart(cost) {
+    if (!cost?.monthly?.length) return;
+    const labels = cost.monthly.map(m => m.month);
+    const values = cost.monthly.map(m => m.total);
+    if (costChart) costChart.destroy();
+    costChart = new Chart(document.getElementById("cost-chart"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "Cost (USD)", data: values,
+          backgroundColor: "rgba(59,130,246,0.5)",
+          borderColor: "rgba(59,130,246,0.9)",
+          borderWidth: 1, borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#7b82a8" } },
+          y: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#7b82a8",
+               callback: v => "$" + v.toFixed(2) } }
+        }
+      }
+    });
+  }
+
+  function renderEC2(ec2) {
+    if (!ec2?.list?.length) {
+      document.getElementById("ec2-table").innerHTML =
+        '<p style="color:#7b82a8;font-size:13px;padding:1rem 0">No EC2 instances found</p>';
+      return;
+    }
+    const rows = ec2.list.map(i => `
+      <tr>
+        <td>
+          <div style="font-weight:500">${i.name}</div>
+          <div style="font-size:11px;color:#7b82a8">${i.id}</div>
+        </td>
+        <td style="color:#7b82a8">${i.type}</td>
+        <td><span class="badge ${i.state === 'running' ? 'badge-green' : 'badge-red'}">${i.state}</span></td>
+      </tr>
+    `).join("");
+    document.getElementById("ec2-table").innerHTML = `
+      <table>
+        <thead><tr><th>Name / ID</th><th>Type</th><th>State</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderS3(s3) {
+    if (!s3?.list?.length) {
+      document.getElementById("s3-list").innerHTML =
+        '<p style="color:#7b82a8;font-size:13px;padding:1rem 0">No S3 buckets found</p>';
+      return;
+    }
+    document.getElementById("s3-list").innerHTML = s3.list.map(b => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #2e3250">
+        <span style="font-size:18px">🗂</span>
+        <div>
+          <div style="font-weight:500;font-size:13px">${b.name}</div>
+          <div style="font-size:11px;color:#7b82a8">Created ${b.created.substring(0,10)}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderIAM(iam) {
+    const items = [
+      { label: "Users",    value: iam?.users    ?? 0, color: "#3b82f6" },
+      { label: "Roles",    value: iam?.roles    ?? 0, color: "#8b5cf6" },
+      { label: "Policies", value: iam?.policies ?? 0, color: "#14b8a6" },
+      { label: "MFA",      value: iam?.mfa_enabled ? "✓" : "✗",
+        color: iam?.mfa_enabled ? "#22c55e" : "#ef4444" }
+    ];
+    document.getElementById("iam-summary").innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        ${items.map(i => `
+          <div style="background:#22263a;border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:24px;font-weight:700;color:${i.color}">${i.value}</div>
+            <div style="font-size:11px;color:#7b82a8;margin-top:4px">${i.label}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  loadData();
+</script>
+</body>
+</html>
