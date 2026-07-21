@@ -181,12 +181,14 @@
     const labels = cost.monthly.map(m => m.month);
     const values = cost.monthly.map(m => m.total);
     if (costChart) costChart.destroy();
+    const displayValues = values.map(v => (v === 0 || Object.is(v, -0)) ? 0.001 : v);
+
     costChart = new Chart(document.getElementById("cost-chart"), {
       type: "bar",
       data: {
         labels,
         datasets: [{
-          label: "Cost (USD)", data: values,
+          label: "Cost (USD)", data: displayValues,
           backgroundColor: "rgba(59,130,246,0.5)",
           borderColor: "rgba(59,130,246,0.9)",
           borderWidth: 1, borderRadius: 4
@@ -194,11 +196,22 @@
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => " $" + values[ctx.dataIndex].toFixed(2)
+            }
+          }
+        },
         scales: {
           x: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#7b82a8" } },
-          y: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#7b82a8",
-               callback: v => "$" + v.toFixed(2) } }
+          y: {
+            grid: { color: "rgba(255,255,255,0.04)" },
+            ticks: { color: "#7b82a8", callback: v => "$" + v.toFixed(2) },
+            min: 0,
+            max: 0.01
+          }
         }
       }
     });
