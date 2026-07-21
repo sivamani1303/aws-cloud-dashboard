@@ -72,32 +72,32 @@ def get_cost_data():
     ce = boto3.client("ce", region_name="us-east-1")
     end   = datetime.today()
     start = end - timedelta(days=180)
+
     response = ce.get_cost_and_usage(
         TimePeriod={
             "Start": start.strftime("%Y-%m-%d"),
             "End":   end.strftime("%Y-%m-%d")
         },
         Granularity="MONTHLY",
-        Metrics=["UnblendedCost"],
-        GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}]
+        Metrics=["UnblendedCost"]
     )
+
     monthly = []
     for result in response["ResultsByTime"]:
         month = result["TimePeriod"]["Start"][:7]
-        total = sum(
-            float(g["Metrics"]["UnblendedCost"]["Amount"])
-            for g in result["Groups"]
-        )
+        total = float(result["Total"]["UnblendedCost"]["Amount"])
+        if total < 0:
+            total = 0.0
         monthly.append({
             "month": month,
             "total": round(total, 2)
         })
+
     current = monthly[-1]["total"] if monthly else 0
     return {
         "current_month": current,
-        "monthly": monthly
+        "monthly":       monthly
     }
-
 
 def get_account_summary():
     iam = boto3.client("iam", region_name="ap-south-1")
