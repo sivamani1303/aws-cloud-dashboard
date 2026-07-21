@@ -123,7 +123,6 @@
 </main>
 
 <script>
-  // ⚠ REPLACE THIS WITH YOUR API GATEWAY URL FROM STEP 17
   const API_URL = "https://beeix39iuh.execute-api.ap-south-1.amazonaws.com/prod/data";
 
   let costChart = null;
@@ -136,7 +135,6 @@
       const response = await fetch(API_URL);
       const raw = await response.json();
 
-      // API Gateway wraps the response in a body string — parse it
       const data = typeof raw.body === "string" ? JSON.parse(raw.body) : raw;
 
       renderStats(data);
