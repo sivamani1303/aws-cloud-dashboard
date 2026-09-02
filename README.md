@@ -2,7 +2,7 @@
 
 ## Overview
 
-A serverless web application built on AWS that monitors real-time cloud resource usage, billing data, and account activity. The dashboard displays EC2 instances, S3 buckets, IAM summary, monthly cost trends, and recent AWS activities with smart tips — all fetched live from AWS APIs and rendered in a browser.
+A serverless web application built on AWS that monitors real-time cloud resource usage, billing data, and account activity. The dashboard displays EC2 instances, S3 buckets, IAM summary, monthly cost trends, and recent AWS activities with smart tips all fetched live from AWS APIs and rendered in a browser.
 
 **Live URL:**
 ```
@@ -320,9 +320,3 @@ This project follows the principle of least privilege throughout:
 - Git version control
 
 ---
-
-## Author
-
-Sivamani P
-Aspiring Cloud & DevOps Engineer
-GitHub: github.com/sivamani1303
