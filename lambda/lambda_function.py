@@ -10,11 +10,12 @@ def lambda_handler(event, context):
     }
     try:
         data = {
-            "ec2":     get_ec2_instances(),
-            "s3":      get_s3_buckets(),
-            "cost":    get_cost_data(),
-            "summary": get_account_summary(),
-            "activities": get_recent_activities()
+            "ec2":        get_ec2_instances(),
+            "s3":         get_s3_buckets(),
+            "cost":       get_cost_data(),
+            "summary":    get_account_summary(),
+            "activities": get_recent_activities(),
+            "budgets":    get_budget_info()
         }
         return {
             "statusCode": 200,
@@ -209,3 +210,33 @@ def get_recent_activities():
             break
 
     return activities
+
+def get_budget_info():
+    budgets = boto3.client("budgets", region_name="us-east-1")
+
+    try:
+        account_id = boto3.client(
+            "sts", region_name="ap-south-1"
+        ).get_caller_identity()["Account"]
+
+        response = budgets.describe_budgets(
+            AccountId=account_id
+        )
+
+        budget_list = []
+        for budget in response["Budgets"]:
+            budget_list.append({
+                "name":       budget["BudgetName"],
+                "limit":      float(budget["BudgetLimit"]["Amount"]),
+                "actual":     float(budget.get("CalculatedSpend", {})
+                              .get("ActualSpend", {})
+                              .get("Amount", 0)),
+                "forecasted": float(budget.get("CalculatedSpend", {})
+                              .get("ForecastedSpend", {})
+                              .get("Amount", 0))
+            })
+
+        return budget_list
+
+    except Exception as e:
+        return []    
