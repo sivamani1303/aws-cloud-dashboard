@@ -74,24 +74,35 @@ def get_cost_data():
     end   = datetime.today()
     start = end - timedelta(days=180)
 
+    # Get ALL record types to see what's there
     response = ce.get_cost_and_usage(
         TimePeriod={
             "Start": start.strftime("%Y-%m-%d"),
             "End":   end.strftime("%Y-%m-%d")
         },
         Granularity="MONTHLY",
-        Metrics=["UnblendedCost"]
+        Metrics=["UnblendedCost"],
+        GroupBy=[{"Type": "DIMENSION", "Key": "RECORD_TYPE"}]
     )
 
     monthly = []
     for result in response["ResultsByTime"]:
         month = result["TimePeriod"]["Start"][:7]
-        total = float(result["Total"]["UnblendedCost"]["Amount"])
-        if total < 0:
-            total = 0.0
+        breakdown = {}
+        usage_total = 0
+
+        for g in result["Groups"]:
+            record_type = g["Keys"][0]
+            amount = float(g["Metrics"]["UnblendedCost"]["Amount"])
+            breakdown[record_type] = round(amount, 4)
+            # Only sum Usage and Tax — exclude Credits
+            if record_type in ["Usage", "Tax", "Fee"]:
+                usage_total += amount
+
         monthly.append({
-            "month": month,
-            "total": round(total, 2)
+            "month":     month,
+            "total":     round(usage_total, 2),
+            "breakdown": breakdown
         })
 
     current = monthly[-1]["total"] if monthly else 0

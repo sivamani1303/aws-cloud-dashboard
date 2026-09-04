@@ -48,7 +48,7 @@
     .panel-title { font-weight: 600; margin-bottom: 1rem; }
     .chart-panel {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem;
+      border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; width: 100%;
     }
     .section-title {
       font-size: 13px; color: var(--muted);
@@ -98,7 +98,7 @@
 
     <p class="section-title">Monthly Cost — Last 6 Months</p>
     <div class="chart-panel">
-      <canvas id="cost-chart" height="80"></canvas>
+      <canvas id="cost-chart" height="80" style="width:100% !important"></canvas>
     </div>
 
     <p class="section-title">Resources</p>
@@ -215,7 +215,8 @@
     const labels = cost.monthly.map(m => m.month);
     const values = cost.monthly.map(m => m.total);
     if (costChart) costChart.destroy();
-    const displayValues = values.map(v => (v === 0 || Object.is(v, -0)) ? 0.001 : v);
+    const allZero = values.every(v => v === 0 || Object.is(v, -0));
+    const displayValues = allZero ? values.map(() => 0.003) : values;
 
     costChart = new Chart(document.getElementById("cost-chart"), {
       type: "bar",
@@ -242,9 +243,14 @@
           x: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#7b82a8" } },
           y: {
             grid: { color: "rgba(255,255,255,0.04)" },
-            ticks: { color: "#7b82a8", callback: v => "$" + v.toFixed(2) },
-            min: 0,
-            max: 0.01
+            ticks: {
+              color: "#7b82a8",
+              callback: v => {
+                if (v >= 1) return "$" + v.toFixed(2);
+                if (v >= 0.01) return "$" + v.toFixed(2);
+                return "$" + v.toFixed(4);
+              }
+            }
           }
         }
       }
