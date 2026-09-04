@@ -1,7 +1,7 @@
 import json
 import boto3
 from datetime import datetime, timedelta
-
+from decimal import Decimal
 
 def lambda_handler(event, context):
     headers = {
@@ -15,8 +15,13 @@ def lambda_handler(event, context):
             "cost":       get_cost_data(),
             "summary":    get_account_summary(),
             "activities": get_recent_activities(),
-            "budgets":    get_budget_info()
+            "budgets":    get_budget_info(),
+            "history":    get_snapshot_history()
         }
+        try:
+            save_snapshot(data)
+        except Exception as snap_err:
+            print(f"Snapshot save failed: {snap_err}")
         return {
             "statusCode": 200,
             "headers": headers,
@@ -251,3 +256,46 @@ def get_budget_info():
 
     except Exception as e:
         return []    
+
+def save_snapshot(data):
+    dynamodb = boto3.resource("dynamodb", region_name="ap-south-1")
+    table    = dynamodb.Table("dashboard-snapshots")
+
+    # DynamoDB doesn't accept float — convert to Decimal
+    snapshot = {
+        "timestamp":      datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        "ec2_total":      data["ec2"]["total"],
+        "ec2_running":    data["ec2"]["running"],
+        "ec2_stopped":    data["ec2"]["stopped"],
+        "s3_total":       data["s3"]["total"],
+        "iam_users":      data["summary"]["users"],
+        "iam_roles":      data["summary"]["roles"],
+        "cost_month":     Decimal(str(data["cost"]["current_month"])),
+        "mfa_enabled":    data["summary"]["mfa_enabled"]
+    }
+
+    table.put_item(Item=snapshot)
+
+def get_snapshot_history():
+    dynamodb = boto3.resource("dynamodb", region_name="ap-south-1")
+    table    = dynamodb.Table("dashboard-snapshots")
+
+    response = table.scan(
+        Limit=10,
+        ProjectionExpression="#ts, ec2_total, ec2_running, s3_total, cost_month",
+        ExpressionAttributeNames={"#ts": "timestamp"}
+    )
+
+    items = sorted(
+        response["Items"],
+        key=lambda x: x["timestamp"],
+        reverse=True
+    )
+
+    return [{
+        "timestamp":   item["timestamp"],
+        "ec2_total":   int(item.get("ec2_total", 0)),
+        "ec2_running": int(item.get("ec2_running", 0)),
+        "s3_total":    int(item.get("s3_total", 0)),
+        "cost_month":  float(item.get("cost_month", 0))
+    } for item in items]
